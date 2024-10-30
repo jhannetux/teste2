@@ -1,0 +1,213 @@
+
+
+Para proteger a rota `/inventory.html` e garantir que apenas usuários do tipo **IT(teamB)** possam acessá-la, você precisa criar um **middleware** no backend com Node.js e Express. Abaixo, detalho como fazer isso.
+
+---
+
+## **Passo 1: Crie o Middleware para Verificar Papéis**  
+No middleware, verificaremos se o usuário tem a permissão adequada para acessar determinadas rotas. Como estamos utilizando **JWT** para autenticação, o middleware também irá decodificar o token e verificar o papel do usuário.
+
+### Middleware `checkRole`
+
+```javascript
+const jwt = require('jsonwebtoken');
+
+// Middleware para verificar o papel do usuário
+const checkRole = (allowedRoles) => (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) {
+    return res.status(401).json({ message: 'Token não fornecido.' });
+  }
+
+  const token = authHeader.split(' ')[1]; // Token no formato "Bearer <token>"
+
+  try {
+    const decoded = jwt.verify(token, 'secreta'); // 'secreta' é a chave usada para assinar o token
+    req.user = decoded; // Armazena os dados do usuário na requisição
+
+    if (!allowedRoles.includes(decoded.role)) {
+      return res.status(403).json({ message: 'Acesso negado. Permissão insuficiente.' });
+    }
+
+    next(); // Continua para a rota
+  } catch (error) {
+    return res.status(403).json({ message: 'Token inválido ou expirado.' });
+  }
+};
+
+module.exports = checkRole;
+```
+
+---
+
+## **Passo 2: Configurando a Rota do Inventory (Express)**  
+Agora, vamos aplicar esse middleware à rota `/inventory.html`. Apenas os usuários com o papel **`it_teamB`** ou **`admin`** poderão acessar essa rota.
+
+### Aplicando o Middleware na Rota
+
+```javascript
+const express = require('express');
+const app = express();
+const checkRole = require('./middlewares/checkRole'); // Importe o middleware
+
+// Protegendo a rota do inventário
+app.get('/inventory.html', checkRole(['it_teamB', 'admin']), (req, res) => {
+  res.sendFile(__dirname + '/public/inventory.html'); // Envia a página HTML
+});
+
+// Rota de login para todos os usuários
+app.get('/login', (req, res) => {
+  res.sendFile(__dirname + '/public/login.html');
+});
+
+// Iniciando o servidor
+const PORT = 3000;
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
+});
+```
+
+---
+
+## **Passo 3: Testando com Tokens de Login**  
+Certifique-se de que, ao fazer o login, você envia o **token JWT** com o papel do usuário para o frontend e usa-o nas requisições para acessar páginas protegidas.
+
+### Exemplo: Login que Gera JWT
+```javascript
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const db = require('./db'); // Conexão com o banco de dados
+
+app.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+  const user = await db.query('SELECT * FROM users WHERE email = ?', [email]);
+
+  if (user && bcrypt.compareSync(password, user.password)) {
+    const token = jwt.sign({ id: user.id, role: user.role }, 'secreta', { expiresIn: '1h' });
+    res.json({ token, role: user.role }); // Envia o token e o papel
+  } else {
+    res.status(401).send('Credenciais inválidas.');
+  }
+});
+
+### Exemplo: Frontend Fetch com Token
+```javascript
+const token = localStorage.getItem('token'); // Recupera o token do localStorage
+
+fetch('/inventory.html', {
+  method: 'GET',
+  headers: {
+    Authorization: `Bearer ${token}`, // Envia o token no cabeçalho
+  },
+})
+  .then((response) => {
+    if (response.status === 403) {
+      alert('Acesso negado. Você não tem permissão para acessar esta página.');
+      window.location.href = '/login';
+    } else {
+      return response.text();
+    }
+  })
+  .then((html) => {
+    document.body.innerHTML = html;
+  })
+  .catch((error) => console.error('Erro:', error));
+/////////////////////////////////////////////////////////////
+
+////////////////////////////////
+
+Envio do email
+npm install nodemailer
+
+const nodemailer = require('nodemailer');
+
+// Configuração do Nodemailer para Outlook
+const transporter = nodemailer.createTransport({
+  host: 'smtp.office365.com',
+  port: 587,
+  secure: false,
+  auth: {
+    user: 'seu_email@outlook.com',
+    pass: 'sua_senha'
+  },
+  tls: {
+    ciphers: 'SSLv3'
+  }
+});
+
+// Rota para submissão do formulário
+app.post('/submit-form', (req, res) => {
+  const { titulo, userId } = req.body;
+
+  // Consulta ao banco para obter o e-mail do usuário
+  const query = 'SELECT email FROM users WHERE id = ?';
+  db.query(query, [userId], (err, result) => {
+    if (err) {
+      console.error('Erro ao buscar usuário:', err);
+      return res.status(500).send('Erro no servidor.');
+    }
+
+    if (result.length === 0) {
+      return res.status(404).send('Usuário não encontrado.');
+    }
+
+    const userEmail = result[0].email;
+
+    // Configurando o e-mail
+    const mailOptions = {
+      from: 'seu_email@outlook.com',
+      to: userEmail,
+      subject: `Formulário submetido: ${titulo}`,
+      text: `O formulário com o título "${titulo}" foi submetido com sucesso!`
+    };
+
+    // Enviando o e-mail
+    transporter.sendMail(mailOptions, (error, info) => {
+      if (error) {
+        console.error('Erro ao enviar o e-mail:', error);
+        return res.status(500).send('Erro ao enviar o e-mail.');
+      }
+      console.log('E-mail enviado:', info.response);
+      res.status(200).send('Formulário submetido e e-mail enviado com sucesso!');
+    });
+  });
+});
+
+FRONT
+
+<form id="myForm" action="/submit-form" method="POST">
+    <label for="titulo">Título:</label>
+    <input type="text" id="titulo" name="titulo" required />
+  
+    <label for="userId">ID do Usuário:</label>
+    <input type="number" id="userId" name="userId" required />
+  
+    <button type="submit">Enviar Formulário</button>
+  </form>
+  
+  <script>
+    document.getElementById('myForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+  
+      const titulo = document.getElementById('titulo').value;
+      const userId = document.getElementById('userId').value;
+  
+      try {
+        const response = await fetch('/submit-form', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ titulo, userId }),
+        });
+  
+        const result = await response.text();
+        alert(result);
+      } catch (error) {
+        console.error('Erro ao enviar o formulário:', error);
+        alert('Erro ao enviar o formulário.');
+      }
+    });
+  </script>
+  
